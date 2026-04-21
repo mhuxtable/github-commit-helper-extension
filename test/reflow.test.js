@@ -1,6 +1,6 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
-const { reflowText, wrapLine } = require("../text-processing.js");
+const { reflowText, wrapLine } = require("../src/text-processing.js");
 
 // ── wrapLine ────────────────────────────────────────────────────────
 

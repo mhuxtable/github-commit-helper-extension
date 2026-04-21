@@ -1,6 +1,6 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
-const { splitTrailers, TRAILER_RE } = require("../text-processing.js");
+const { splitTrailers, TRAILER_RE } = require("../src/text-processing.js");
 
 // ── TRAILER_RE ──────────────────────────────────────────────────────
 

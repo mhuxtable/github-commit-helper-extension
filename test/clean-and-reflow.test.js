@@ -1,6 +1,6 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
-const { cleanAndReflow } = require("../text-processing.js");
+const { cleanAndReflow } = require("../src/text-processing.js");
 
 describe("cleanAndReflow", () => {
   it("preserves trailer emails that look like HTML tags", () => {

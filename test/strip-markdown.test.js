@@ -5,7 +5,7 @@ const {
   stripInlineMarkdown,
   HTML_TAG_RE,
   HTML_MULTILINE_OPEN_RE,
-} = require("../text-processing.js");
+} = require("../src/text-processing.js");
 
 // ── HTML_TAG_RE ─────────────────────────────────────────────────────
 
