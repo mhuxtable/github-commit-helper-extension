@@ -1,0 +1,502 @@
+// GitHub Commit Message Helper
+// Enhances PR merge dialogs with monospace fonts, 72-char line indicators,
+// and neovim-style text reflow.
+
+(function () {
+  "use strict";
+
+  const TITLE_LIMIT = 72;
+  const BODY_WRAP = 72;
+
+  // ── Neovim-style reflow ──────────────────────────────────────────────
+  //
+  // Mirrors the behaviour of `gq` in neovim with textwidth=72:
+  //  - Paragraph breaks (blank lines) are preserved.
+  //  - List items (lines starting with "- ", "* ", "1. ", etc.) start a
+  //    new paragraph; continuation lines are indented to the content
+  //    column.
+  //  - Indented blocks (4+ leading spaces or a tab) are left untouched
+  //    (code blocks).
+  //  - Long words that exceed the wrap column are emitted as-is (not
+  //    broken mid-word).
+
+  // Regex matching a git trailer line: "Token: Value"
+  const TRAILER_RE = /^[A-Za-z][A-Za-z0-9-]*: .+/;
+
+  // Split trailing git trailers (Co-authored-by, Signed-off-by, etc.)
+  // from the body so they can be preserved verbatim during reflow.
+  function splitTrailers(text) {
+    const lines = text.split("\n");
+
+    // Scan backwards from the end to find contiguous trailer lines,
+    // skipping any trailing blank lines.
+    let end = lines.length - 1;
+    while (end >= 0 && lines[end].trim() === "") {
+      end--;
+    }
+    if (end < 0) return { body: text, trailers: "" };
+
+    let trailerStart = end;
+    while (trailerStart >= 0 && TRAILER_RE.test(lines[trailerStart])) {
+      trailerStart--;
+    }
+
+    // trailerStart now points to the line before the first trailer.
+    // We need at least one trailer and the preceding line must be blank.
+    const trailerCount = end - trailerStart;
+    if (trailerCount === 0) return { body: text, trailers: "" };
+    if (trailerStart < 0 || lines[trailerStart].trim() !== "") {
+      return { body: text, trailers: "" };
+    }
+
+    // Include the blank separator line and any trailing blanks
+    const body = lines.slice(0, trailerStart).join("\n");
+    const trailers = "\n" + lines.slice(trailerStart).join("\n");
+    return { body, trailers };
+  }
+
+  function reflowText(text, width) {
+    // Strip trailers before reflowing, re-append them unchanged.
+    const { body, trailers } = splitTrailers(text);
+
+    const lines = body.split("\n");
+    const result = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Blank line -> preserve as paragraph break
+      if (line.trim() === "") {
+        result.push("");
+        i++;
+        continue;
+      }
+
+      // Code / indented block -> leave untouched
+      if (/^(?: {4,}|\t)/.test(line)) {
+        result.push(line);
+        i++;
+        continue;
+      }
+
+      // Detect list item prefix and its indentation
+      const listMatch = line.match(/^(\s*(?:[-*+]|\d+[.)]) )/);
+      const hangingIndent = listMatch
+        ? " ".repeat(listMatch[1].length)
+        : "";
+      const leadingIndent = line.match(/^(\s*)/)[1];
+
+      // Collect the paragraph: consecutive non-blank lines that are
+      // continuation lines (same or deeper indent, not a new list item).
+      const paraLines = [line];
+      i++;
+      while (i < lines.length) {
+        const next = lines[i];
+        if (next.trim() === "") break;
+        if (/^\s*(?:[-*+]|\d+[.)]) /.test(next)) break;
+        if (/^(?: {4,}|\t)/.test(next)) break;
+        const nextIndent = next.match(/^(\s*)/)[1];
+        if (!listMatch && nextIndent.length < leadingIndent.length) break;
+        paraLines.push(next);
+        i++;
+      }
+
+      // Join the paragraph into one long string, collapsing whitespace.
+      const joined = paraLines.map((l) => l.trim()).join(" ");
+
+      // Wrap to `width`, respecting hanging indent.
+      const wrapped = wrapLine(joined, width, leadingIndent, hangingIndent);
+      result.push(...wrapped);
+    }
+
+    return result.join("\n") + trailers;
+  }
+
+  function wrapLine(text, width, firstIndent, restIndent) {
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length === 0) return [""];
+
+    const lines = [];
+    let currentLine = firstIndent;
+    let isFirst = true;
+
+    for (const word of words) {
+      const indent = isFirst ? firstIndent : restIndent;
+      const sep = currentLine === indent ? "" : " ";
+
+      if (
+        currentLine.length + sep.length + word.length > width &&
+        currentLine !== indent
+      ) {
+        lines.push(currentLine);
+        currentLine = restIndent + word;
+        isFirst = false;
+      } else {
+        currentLine += sep + word;
+      }
+    }
+
+    if (currentLine.length > 0) {
+      lines.push(currentLine);
+    }
+
+    return lines;
+  }
+
+  // ── Markdown stripping ────────────────────────────────────────────────
+  //
+  // Strips GitHub-flavoured markdown formatting so the commit message
+  // reads cleanly in plain-text contexts (git log, email, etc.).
+  //  - Fenced code blocks (```) → 4-space indented (preserves content,
+  //    survives reflow as an indented block).
+  //  - Inline code, bold, italic, strikethrough → plain text.
+  //  - Links [text](url) → text (url).
+  //  - Images ![alt](url) → removed.
+  //  - Heading prefixes (###) → removed.
+  //  - HTML tags → removed.
+  //  - List prefixes, blank lines, indented blocks → preserved.
+
+  function stripMarkdown(text) {
+    const lines = text.split("\n");
+    const result = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Fenced code block → convert to 4-space indented
+      if (/^```/.test(line.trim())) {
+        i++; // skip opening fence
+        while (i < lines.length && !/^```/.test(lines[i].trim())) {
+          result.push("    " + lines[i]);
+          i++;
+        }
+        if (i < lines.length) i++; // skip closing fence
+        continue;
+      }
+
+      result.push(stripInlineMarkdown(line));
+      i++;
+    }
+
+    return result.join("\n");
+  }
+
+  function stripInlineMarkdown(line) {
+    let s = line;
+
+    // Heading prefixes: "## Heading" → "Heading"
+    s = s.replace(/^(#{1,6})\s+/, "");
+
+    // Images: ![alt](url) → "" (images don't belong in commit messages)
+    s = s.replace(/!\[([^\]]*)\]\([^)]*\)/g, "");
+
+    // Links: [text](url) → "text (url)"
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)");
+
+    // Bold: **text** and __text__ (strip before italic)
+    s = s.replace(/\*\*(.+?)\*\*/g, "$1");
+    s = s.replace(/__(.+?)__/g, "$1");
+
+    // Italic: *text* and _text_ (word-boundary-aware to avoid
+    // mangling list items or variable_names)
+    s = s.replace(/(?<!\w)\*(.+?)\*(?!\w)/g, "$1");
+    s = s.replace(/(?<!\w)_(.+?)_(?!\w)/g, "$1");
+
+    // Strikethrough: ~~text~~
+    s = s.replace(/~~(.+?)~~/g, "$1");
+
+    // Inline code: ``code`` and `code`
+    s = s.replace(/``(.+?)``/g, "$1");
+    s = s.replace(/`(.+?)`/g, "$1");
+
+    // HTML tags
+    s = s.replace(/<[^>]+>/g, "");
+
+    return s;
+  }
+
+  // Combined clean: strip markdown then reflow.
+  function cleanAndReflow(text, width) {
+    return reflowText(stripMarkdown(text), width);
+  }
+
+  // ── Utility ──────────────────────────────────────────────────────────
+
+  function measureTextWidth(element, text) {
+    const span = document.createElement("span");
+    const style = getComputedStyle(element);
+    span.style.font = style.font;
+    span.style.fontSize = style.fontSize;
+    span.style.fontFamily = style.fontFamily;
+    span.style.letterSpacing = style.letterSpacing;
+    span.style.visibility = "hidden";
+    span.style.position = "absolute";
+    span.style.whiteSpace = "pre";
+    span.textContent = text;
+    document.body.appendChild(span);
+    const width = span.getBoundingClientRect().width;
+    span.remove();
+    return width;
+  }
+
+  function measureMonoCharWidth(element) {
+    return measureTextWidth(element, "M".repeat(72)) / 72;
+  }
+
+  function escapeHtml(str) {
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  // Set a textarea's value via React's native setter so state stays in sync.
+  function setTextareaValue(textarea, value) {
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value"
+    ).set;
+    nativeSetter.call(textarea, value);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    textarea.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  // ── Title field handling ─────────────────────────────────────────────
+
+  function setupTitleField(input) {
+    if (input.dataset.gcmhReady) return;
+    input.dataset.gcmhReady = "1";
+
+    // Wrap the input in a position:relative container so we can overlay
+    // the guide line and counter on top of it.
+    const wrapper = document.createElement("div");
+    wrapper.className = "gcmh-title-wrapper";
+    input.parentNode.insertBefore(wrapper, input);
+    wrapper.appendChild(input);
+
+    // Guide line at column 72 (always visible)
+    const guide = document.createElement("div");
+    guide.className = "gcmh-title-guide";
+    wrapper.appendChild(guide);
+
+    // Inline counter, positioned far right inside the input
+    const counter = document.createElement("span");
+    counter.className = "gcmh-title-counter";
+    wrapper.appendChild(counter);
+    input.classList.add("gcmh-has-counter");
+
+    function update() {
+      const len = input.value.length;
+
+      // Update counter
+      counter.textContent = `${len}/${TITLE_LIMIT}`;
+      counter.classList.toggle("gcmh-over", len > TITLE_LIMIT);
+
+      // Position the guide line at column 72.
+      // We measure the width of 72 "M" chars for a stable position,
+      // since the input may scroll horizontally.
+      const style = getComputedStyle(input);
+      const paddingLeft = parseFloat(style.paddingLeft) || 0;
+      const charWidth = measureMonoCharWidth(input);
+      guide.style.left = (paddingLeft + charWidth * TITLE_LIMIT) + "px";
+      guide.classList.toggle("gcmh-over", len > TITLE_LIMIT);
+
+      // Red background gradient from column 72 onward when over limit
+      if (len > TITLE_LIMIT) {
+        input.classList.add("gcmh-over-limit");
+        const pos = measureTextWidth(
+          input,
+          input.value.substring(0, TITLE_LIMIT)
+        );
+        const paddingL = parseFloat(style.paddingLeft) || 0;
+        input.style.setProperty("--gcmh-limit-pos", (paddingL + pos) + "px");
+      } else {
+        input.classList.remove("gcmh-over-limit");
+      }
+    }
+
+    input.addEventListener("input", update);
+
+    // Defer initial measurement until fonts are loaded and layout settles
+    requestAnimationFrame(() => {
+      requestAnimationFrame(update);
+    });
+  }
+
+  // ── Textarea (body) handling ─────────────────────────────────────────
+
+  function setupTextarea(textarea) {
+    if (textarea.dataset.gcmhReady) return;
+    textarea.dataset.gcmhReady = "1";
+
+    // Wrap the textarea. We need to be careful to preserve layout.
+    const wrapper = document.createElement("div");
+    wrapper.className = "gcmh-textarea-wrapper";
+    textarea.parentNode.insertBefore(wrapper, textarea);
+    wrapper.appendChild(textarea);
+
+    // Backdrop for highlighting overflow regions
+    const backdrop = document.createElement("div");
+    backdrop.className = "gcmh-backdrop";
+    wrapper.insertBefore(backdrop, textarea);
+
+    // Ruler at column 72
+    const ruler = document.createElement("div");
+    ruler.className = "gcmh-ruler";
+    wrapper.appendChild(ruler);
+
+    textarea.classList.add("gcmh-has-backdrop");
+
+    // Toolbar at the bottom of the textarea
+    const toolbar = document.createElement("div");
+    toolbar.className = "gcmh-toolbar";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "gcmh-reflow-btn";
+    btn.textContent = "Reflow to 72 cols";
+    btn.title = "Reflow text to 72 columns (neovim gq style)";
+    btn.addEventListener("click", () => {
+      setTextareaValue(textarea, reflowText(textarea.value, BODY_WRAP));
+      updateBackdrop();
+    });
+
+    const hint = document.createElement("span");
+    hint.className = "gcmh-toolbar-hint";
+    hint.textContent = "Wrap lines to 72 columns";
+
+    // "Undo autoformat" button — one-shot, restores the original text
+    // that was in the textarea before we auto-cleaned it on first render.
+    const undoBtn = document.createElement("button");
+    undoBtn.type = "button";
+    undoBtn.className = "gcmh-reflow-btn gcmh-undo-btn";
+    undoBtn.textContent = "Undo autoformat";
+    undoBtn.title = "Restore the original PR description before auto-cleaning";
+    undoBtn.style.display = "none"; // hidden until auto-clean runs
+
+    toolbar.appendChild(btn);
+    toolbar.appendChild(undoBtn);
+    toolbar.appendChild(hint);
+    wrapper.appendChild(toolbar);
+
+    function updateBackdrop() {
+      // Sync scroll positions
+      backdrop.scrollTop = textarea.scrollTop;
+      backdrop.scrollLeft = textarea.scrollLeft;
+
+      // Match textarea dimensions and style
+      const style = getComputedStyle(textarea);
+      backdrop.style.width = style.width;
+      backdrop.style.height = style.height;
+      backdrop.style.padding = style.padding;
+      backdrop.style.fontSize = style.fontSize;
+      backdrop.style.fontFamily = style.fontFamily;
+      backdrop.style.lineHeight = style.lineHeight;
+      backdrop.style.letterSpacing = style.letterSpacing;
+      backdrop.style.borderWidth = style.borderWidth;
+      backdrop.style.borderStyle = "solid";
+      backdrop.style.borderColor = "transparent";
+      backdrop.style.boxSizing = style.boxSizing;
+      backdrop.style.borderRadius = style.borderRadius;
+
+      // Position ruler at column 72
+      const charWidth = measureMonoCharWidth(textarea);
+      const paddingLeft = parseFloat(style.paddingLeft) || 0;
+      const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+      ruler.style.left = (borderLeft + paddingLeft + charWidth * BODY_WRAP) + "px";
+      ruler.style.height = style.height;
+
+      // Build backdrop content: highlight overflow portions
+      const text = textarea.value;
+      const lines = text.split("\n");
+      const fragments = [];
+
+      for (const line of lines) {
+        if (line.length <= BODY_WRAP) {
+          fragments.push(escapeHtml(line));
+        } else {
+          const ok = escapeHtml(line.substring(0, BODY_WRAP));
+          const over = escapeHtml(line.substring(BODY_WRAP));
+          fragments.push(
+            ok + '<span class="gcmh-line-overflow">' + over + "</span>"
+          );
+        }
+      }
+
+      backdrop.innerHTML = fragments.join("\n");
+    }
+
+    textarea.addEventListener("input", updateBackdrop);
+    textarea.addEventListener("scroll", () => {
+      backdrop.scrollTop = textarea.scrollTop;
+      backdrop.scrollLeft = textarea.scrollLeft;
+    });
+
+    if (typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(updateBackdrop).observe(textarea);
+    }
+
+    // Auto-clean: strip markdown + reflow on first render.
+    // Store the original text so the user can undo it once.
+    let originalText = null;
+
+    undoBtn.addEventListener("click", () => {
+      if (originalText !== null) {
+        setTextareaValue(textarea, originalText);
+        updateBackdrop();
+        originalText = null;
+        undoBtn.style.display = "none";
+      }
+    });
+
+    // Defer initial update so layout is settled, then auto-clean.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const raw = textarea.value;
+        const cleaned = cleanAndReflow(raw, BODY_WRAP);
+        if (cleaned !== raw) {
+          originalText = raw;
+          setTextareaValue(textarea, cleaned);
+          undoBtn.style.display = "";
+        }
+        updateBackdrop();
+      });
+    });
+  }
+
+  // ── Observer: detect merge box appearing ─────────────────────────────
+
+  function scanAndSetup() {
+    const mergeBox = document.querySelector(
+      '[data-testid="mergebox-partial"]'
+    );
+    if (!mergeBox) return;
+
+    // Title — look for the input inside the "Commit message" form control
+    const titleInput = mergeBox.querySelector(
+      "input.prc-components-Input-IwWrt"
+    );
+    if (titleInput) setupTitleField(titleInput);
+
+    // Body — look for the textarea inside "Extended description"
+    const bodyTextarea = mergeBox.querySelector(
+      "textarea.prc-Textarea-TextArea-snlco"
+    );
+    if (bodyTextarea) setupTextarea(bodyTextarea);
+  }
+
+  // Run on page load
+  scanAndSetup();
+
+  // GitHub is an SPA — watch for DOM changes
+  const observer = new MutationObserver(() => {
+    scanAndSetup();
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+})();

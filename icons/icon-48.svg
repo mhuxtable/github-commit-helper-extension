@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <rect width="48" height="48" rx="8" fill="#24292e"/>
+  <text x="6" y="20" font-family="monospace" font-size="10" fill="#58a6ff">72</text>
+  <line x1="28" y1="6" x2="28" y2="42" stroke="#f85149" stroke-width="1.5" stroke-dasharray="3,2"/>
+  <text x="6" y="34" font-family="monospace" font-size="8" fill="#8b949e">commit msg</text>
+  <rect x="32" y="28" width="10" height="10" rx="2" fill="#238636"/>
+  <text x="34" y="36" font-family="monospace" font-size="8" fill="white">R</text>
+</svg>

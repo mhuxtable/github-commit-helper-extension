@@ -1,0 +1,19 @@
+{
+  "manifest_version": 2,
+  "name": "GitHub Commit Message Helper",
+  "version": "1.0.0",
+  "description": "Enforces good git commit message discipline in GitHub PR merge dialogs: monospace font, 72-char line indicators, and text reflow.",
+  "permissions": [],
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "48": "icons/icon-48.svg",
+    "96": "icons/icon-96.svg"
+  }
+}
