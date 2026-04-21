@@ -236,8 +236,13 @@
   }
 
   // Combined clean: strip markdown then reflow.
+  // Trailers are split out first so that angle-bracket emails in lines
+  // like "Co-authored-by: Name <email>" aren't eaten by the HTML tag
+  // stripper.
   function cleanAndReflow(text, width) {
-    return reflowText(stripMarkdown(text), width);
+    const { body, trailers } = splitTrailers(text);
+    const cleaned = reflowText(stripMarkdown(body), width);
+    return cleaned + trailers;
   }
 
   // ── Utility ──────────────────────────────────────────────────────────
