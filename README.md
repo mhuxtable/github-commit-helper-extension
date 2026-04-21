@@ -1,4 +1,4 @@
-# GitHub Reflow
+# GitHub PR Commit Message Toolbox
 
 A Firefox extension that enforces good commit message discipline in GitHub's PR merge dialogs through sane defaults and additional tools.
 
