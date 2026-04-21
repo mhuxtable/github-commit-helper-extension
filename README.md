@@ -1,8 +1,10 @@
 # GitHub Reflow
 
-A Firefox extension that enforces good commit message discipline in GitHub's PR merge dialogs.
+A Firefox extension that enforces good commit message discipline in GitHub's PR merge dialogs through sane defaults and additional tools.
 
-When you merge a PR on GitHub, the commit message is pre-filled with the PR description – markdown headings, bold text, image tags, long lines. This extension strips the formatting and reflows the text to a configurable column width.
+When you merge a PR on GitHub, the commit message is typically pre-filled with the PR description – which means it contains markdown headings, bold text, image tags, URLs, and long lines. It is difficult to edit the description in situ because there is no indication of line width.
+
+This extension strips the formatting and reflows the text to a configurable column width. It also provides a toolbar to enable manual reflowing of the text later after editing; no more copy-pasting into your editor to get well-formatted commit messages! 🎉
 
 ![Before and after: markdown stripped and text reflowed to 72 columns](screenshots/before-after.gif)
 
