@@ -1,0 +1,14 @@
+{
+  "name": "github-commit-helper",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Enforces good git commit message discipline in GitHub PR merge dialogs",
+  "scripts": {
+    "start": "web-ext run",
+    "build": "web-ext build",
+    "lint": "web-ext lint"
+  },
+  "devDependencies": {
+    "web-ext": "^8.4.0"
+  }
+}
