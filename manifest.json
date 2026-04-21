@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "GitHub Commit Message Helper",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Enforces good git commit message discipline in GitHub PR merge dialogs: monospace font, line-length indicators, and text reflow.",
   "permissions": ["storage"],
   "browser_action": {
@@ -23,6 +23,7 @@
   },
   "browser_specific_settings": {
     "gecko": {
+      "id": "{996c52ec-dd0a-4d25-9c1d-5c724c61c400}",
       "data_collection_permissions": {
         "required": ["none"]
       }
