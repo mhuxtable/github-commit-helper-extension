@@ -84,10 +84,13 @@
     while (i < lines.length) {
       const line = lines[i];
 
-      // Blank line -> preserve as paragraph break
+      // Blank line -> preserve as paragraph break (collapse runs into one)
       if (line.trim() === "") {
         result.push("");
         i++;
+        while (i < lines.length && lines[i].trim() === "") {
+          i++;
+        }
         continue;
       }
 
