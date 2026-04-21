@@ -4,13 +4,7 @@ A Firefox extension that enforces good commit message discipline in GitHub's PR 
 
 When you merge a PR on GitHub, the commit message is pre-filled with the PR description – markdown headings, bold text, image tags, long lines. This extension strips the formatting and reflows the text to a configurable column width.
 
-**Before** – raw PR description in the merge dialog:
-
-![Before: markdown formatting in commit message](screenshots/body-before.png)
-
-**After** – cleaned and reflowed to 72 columns:
-
-![After: plain text, wrapped to 72 columns](screenshots/body-after.png)
+![Before and after: markdown stripped and text reflowed to 72 columns](screenshots/before-after.gif)
 
 ## What it does
 
