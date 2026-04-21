@@ -5,8 +5,26 @@
 (function () {
   "use strict";
 
-  const TITLE_LIMIT = 72;
-  const BODY_WRAP = 72;
+  // ── Settings ─────────────────────────────────────────────────────────
+
+  const DEFAULTS = { titleLimit: 72, bodyWrap: 72, autoFormat: true };
+  let settings = { ...DEFAULTS };
+
+  // Load settings then kick off the observer.
+  browser.storage.local.get(DEFAULTS).then((s) => {
+    settings = s;
+    scanAndSetup();
+  });
+
+  // React to settings changes from the popup (live update).
+  browser.storage.onChanged.addListener((changes) => {
+    for (const [key, { newValue }] of Object.entries(changes)) {
+      if (key in settings) settings[key] = newValue;
+    }
+    for (const fn of settingsListeners) fn();
+  });
+
+  const settingsListeners = [];
 
   // ── Neovim-style reflow ──────────────────────────────────────────────
   //
@@ -291,8 +309,8 @@
       const len = input.value.length;
 
       // Update counter
-      counter.textContent = `${len}/${TITLE_LIMIT}`;
-      counter.classList.toggle("gcmh-over", len > TITLE_LIMIT);
+      counter.textContent = `${len}/${settings.titleLimit}`;
+      counter.classList.toggle("gcmh-over", len > settings.titleLimit);
 
       // Position the guide line at column 72.
       // We measure the width of 72 "M" chars for a stable position,
@@ -300,15 +318,15 @@
       const style = getComputedStyle(input);
       const paddingLeft = parseFloat(style.paddingLeft) || 0;
       const charWidth = measureMonoCharWidth(input);
-      guide.style.left = (paddingLeft + charWidth * TITLE_LIMIT) + "px";
-      guide.classList.toggle("gcmh-over", len > TITLE_LIMIT);
+      guide.style.left = (paddingLeft + charWidth * settings.titleLimit) + "px";
+      guide.classList.toggle("gcmh-over", len > settings.titleLimit);
 
       // Red background gradient from column 72 onward when over limit
-      if (len > TITLE_LIMIT) {
+      if (len > settings.titleLimit) {
         input.classList.add("gcmh-over-limit");
         const pos = measureTextWidth(
           input,
-          input.value.substring(0, TITLE_LIMIT)
+          input.value.substring(0, settings.titleLimit)
         );
         const paddingL = parseFloat(style.paddingLeft) || 0;
         input.style.setProperty("--gcmh-limit-pos", (paddingL + pos) + "px");
@@ -318,6 +336,7 @@
     }
 
     input.addEventListener("input", update);
+    settingsListeners.push(update);
 
     // Defer initial measurement until fonts are loaded and layout settles
     requestAnimationFrame(() => {
@@ -356,16 +375,40 @@
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "gcmh-reflow-btn";
-    btn.textContent = "Reflow to 72 cols";
-    btn.title = "Reflow text to 72 columns (neovim gq style)";
+    btn.title = "Reflow text to configured column width (neovim gq style)";
+    function updateReflowLabel() {
+      btn.textContent = `Reflow to ${settings.bodyWrap} cols`;
+    }
+    updateReflowLabel();
     btn.addEventListener("click", () => {
-      setTextareaValue(textarea, reflowText(textarea.value, BODY_WRAP));
+      setTextareaValue(textarea, reflowText(textarea.value, settings.bodyWrap));
+      updateBackdrop();
+    });
+
+    // "Clean & reflow" — visible when auto-format is off, so the user
+    // can trigger markdown stripping manually.
+    const cleanBtn = document.createElement("button");
+    cleanBtn.type = "button";
+    cleanBtn.className = "gcmh-reflow-btn gcmh-clean-btn";
+    cleanBtn.textContent = "Clean & reflow";
+    cleanBtn.title = "Strip markdown formatting and reflow";
+    cleanBtn.addEventListener("click", () => {
+      const raw = textarea.value;
+      const cleaned = cleanAndReflow(raw, settings.bodyWrap);
+      if (cleaned !== raw) {
+        originalText = raw;
+        setTextareaValue(textarea, cleaned);
+        undoBtn.style.display = "";
+      }
       updateBackdrop();
     });
 
     const hint = document.createElement("span");
     hint.className = "gcmh-toolbar-hint";
-    hint.textContent = "Wrap lines to 72 columns";
+    function updateHint() {
+      hint.textContent = `Wrap to ${settings.bodyWrap} columns`;
+    }
+    updateHint();
 
     // "Undo autoformat" button — one-shot, restores the original text
     // that was in the textarea before we auto-cleaned it on first render.
@@ -376,7 +419,13 @@
     undoBtn.title = "Restore the original PR description before auto-cleaning";
     undoBtn.style.display = "none"; // hidden until auto-clean runs
 
+    function updateToolbarVisibility() {
+      cleanBtn.style.display = settings.autoFormat ? "none" : "";
+    }
+    updateToolbarVisibility();
+
     toolbar.appendChild(btn);
+    toolbar.appendChild(cleanBtn);
     toolbar.appendChild(undoBtn);
     toolbar.appendChild(hint);
     wrapper.appendChild(toolbar);
@@ -405,7 +454,7 @@
       const charWidth = measureMonoCharWidth(textarea);
       const paddingLeft = parseFloat(style.paddingLeft) || 0;
       const borderLeft = parseFloat(style.borderLeftWidth) || 0;
-      ruler.style.left = (borderLeft + paddingLeft + charWidth * BODY_WRAP) + "px";
+      ruler.style.left = (borderLeft + paddingLeft + charWidth * settings.bodyWrap) + "px";
       ruler.style.height = style.height;
 
       // Build backdrop content: highlight overflow portions
@@ -414,11 +463,11 @@
       const fragments = [];
 
       for (const line of lines) {
-        if (line.length <= BODY_WRAP) {
+        if (line.length <= settings.bodyWrap) {
           fragments.push(escapeHtml(line));
         } else {
-          const ok = escapeHtml(line.substring(0, BODY_WRAP));
-          const over = escapeHtml(line.substring(BODY_WRAP));
+          const ok = escapeHtml(line.substring(0, settings.bodyWrap));
+          const over = escapeHtml(line.substring(settings.bodyWrap));
           fragments.push(
             ok + '<span class="gcmh-line-overflow">' + over + "</span>"
           );
@@ -438,6 +487,14 @@
       new ResizeObserver(updateBackdrop).observe(textarea);
     }
 
+    // Re-render when settings change from the popup
+    settingsListeners.push(() => {
+      updateReflowLabel();
+      updateHint();
+      updateToolbarVisibility();
+      updateBackdrop();
+    });
+
     // Auto-clean: strip markdown + reflow on first render.
     // Store the original text so the user can undo it once.
     let originalText = null;
@@ -451,15 +508,17 @@
       }
     });
 
-    // Defer initial update so layout is settled, then auto-clean.
+    // Defer initial update so layout is settled, then auto-clean if enabled.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        const raw = textarea.value;
-        const cleaned = cleanAndReflow(raw, BODY_WRAP);
-        if (cleaned !== raw) {
-          originalText = raw;
-          setTextareaValue(textarea, cleaned);
-          undoBtn.style.display = "";
+        if (settings.autoFormat) {
+          const raw = textarea.value;
+          const cleaned = cleanAndReflow(raw, settings.bodyWrap);
+          if (cleaned !== raw) {
+            originalText = raw;
+            setTextareaValue(textarea, cleaned);
+            undoBtn.style.display = "";
+          }
         }
         updateBackdrop();
       });
