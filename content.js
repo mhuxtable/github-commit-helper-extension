@@ -319,12 +319,14 @@
 
   // Set a textarea's value via React's native setter so state stays in sync.
   function setTextareaValue(textarea, value) {
-    const nativeSetter = Object.getOwnPropertyDescriptor(
-      HTMLTextAreaElement.prototype,
-      "value"
-    ).set;
-    nativeSetter.call(textarea, value);
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    // Use execCommand so the change lands on the browser's native undo
+    // stack (Ctrl/Cmd-Z will revert it).  Works in Firefox 89+.
+    textarea.focus();
+    textarea.select();
+    document.execCommand("insertText", false, value);
+
+    // execCommand already set the value and fired an "input" event.
+    // Dispatch "change" for React's state sync.
     textarea.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
