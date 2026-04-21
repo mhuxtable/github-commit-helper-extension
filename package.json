@@ -4,6 +4,7 @@
   "private": true,
   "description": "Enforces good git commit message discipline in GitHub PR merge dialogs",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "start": "web-ext run",
     "build": "web-ext build",
     "lint": "web-ext lint"
