@@ -172,8 +172,32 @@
   //  - Links [text](url) → text (url).
   //  - Images ![alt](url) → removed.
   //  - Heading prefixes (###) → removed.
-  //  - HTML tags → removed.
+  //  - Horizontal rules (---, ***) → removed.
+  //  - HTML tags → removed (whitelisted to GitHub's allowed set).
   //  - List prefixes, blank lines, indented blocks → preserved.
+
+  // Tags GitHub allows through its sanitizer (html-pipeline). Using a
+  // whitelist means we won't mangle things like <stdin> or <T> in
+  // technical commit messages.
+  const HTML_TAGS = [
+    "a", "abbr", "b", "bdo", "blockquote", "br", "caption", "cite",
+    "code", "dd", "del", "details", "dfn", "div", "dl", "dt", "em",
+    "figcaption", "figure", "h1", "h2", "h3", "h4", "h5", "h6", "hr",
+    "i", "img", "ins", "kbd", "li", "mark", "ol", "p", "picture",
+    "pre", "q", "rp", "rt", "ruby", "s", "samp", "small", "source",
+    "span", "strike", "strong", "sub", "summary", "sup", "table",
+    "tbody", "td", "tfoot", "th", "thead", "time", "tr", "tt", "ul",
+    "var", "wbr",
+  ];
+  const HTML_TAG_RE = new RegExp(
+    "</?(" + HTML_TAGS.join("|") + ")(\\s[^>]*)?\\/?>",
+    "gi"
+  );
+  // Same tag names but for detecting multiline opening tags (no closing >)
+  const HTML_MULTILINE_OPEN_RE = new RegExp(
+    "^\\s*<(" + HTML_TAGS.join("|") + ")(\\s|$)",
+    "i"
+  );
 
   function stripMarkdown(text) {
     const lines = text.split("\n");
@@ -191,6 +215,23 @@
           i++;
         }
         if (i < lines.length) i++; // skip closing fence
+        continue;
+      }
+
+      // Multiline HTML tag (e.g. <img with attributes across lines) —
+      // consume and discard all lines until the closing >.
+      if (HTML_MULTILINE_OPEN_RE.test(line) && !/>/.test(line)) {
+        i++;
+        while (i < lines.length && !/>/.test(lines[i])) {
+          i++;
+        }
+        if (i < lines.length) i++; // skip line with closing >
+        continue;
+      }
+
+      // Horizontal rules (---, ***, ___) — not valid in commit messages
+      if (/^\s*([-*_])\s*(\1\s*){2,}$/.test(line)) {
+        i++;
         continue;
       }
 
@@ -229,8 +270,13 @@
     s = s.replace(/``(.+?)``/g, "$1");
     s = s.replace(/`(.+?)`/g, "$1");
 
-    // HTML tags
-    s = s.replace(/<[^>]+>/g, "");
+    // <br> → newline rather than just deleting it
+    s = s.replace(/<br\s*\/?>/gi, "\n");
+
+    // Remaining HTML tags — whitelisted to the tags GitHub actually
+    // allows through its sanitizer. Avoids false positives on <stdin>,
+    // <T>, etc.
+    s = s.replace(HTML_TAG_RE, "");
 
     return s;
   }
