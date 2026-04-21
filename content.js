@@ -314,13 +314,6 @@
     return measureTextWidth(element, "M".repeat(72)) / 72;
   }
 
-  function escapeHtml(str) {
-    return str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-  }
-
   // Set a textarea's value via React's native setter so state stays in sync.
   function setTextareaValue(textarea, value) {
     const nativeSetter = Object.getOwnPropertyDescriptor(
@@ -511,21 +504,21 @@
       // Build backdrop content: highlight overflow portions
       const text = textarea.value;
       const lines = text.split("\n");
-      const fragments = [];
 
-      for (const line of lines) {
+      backdrop.textContent = "";
+      for (let i = 0; i < lines.length; i++) {
+        if (i > 0) backdrop.appendChild(document.createTextNode("\n"));
+        const line = lines[i];
         if (line.length <= settings.bodyWrap) {
-          fragments.push(escapeHtml(line));
+          backdrop.appendChild(document.createTextNode(line));
         } else {
-          const ok = escapeHtml(line.substring(0, settings.bodyWrap));
-          const over = escapeHtml(line.substring(settings.bodyWrap));
-          fragments.push(
-            ok + '<span class="gcmh-line-overflow">' + over + "</span>"
-          );
+          backdrop.appendChild(document.createTextNode(line.substring(0, settings.bodyWrap)));
+          const span = document.createElement("span");
+          span.className = "gcmh-line-overflow";
+          span.textContent = line.substring(settings.bodyWrap);
+          backdrop.appendChild(span);
         }
       }
-
-      backdrop.innerHTML = fragments.join("\n");
     }
 
     textarea.addEventListener("input", updateBackdrop);
