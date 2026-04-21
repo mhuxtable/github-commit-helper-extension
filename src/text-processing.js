@@ -179,6 +179,12 @@ const HTML_MULTILINE_OPEN_RE = new RegExp(
 );
 
 function stripMarkdown(text) {
+  // Strip images and links before splitting into lines, because GitHub
+  // wraps long PR descriptions and may break ![alt](url) or [text](url)
+  // across multiple lines.
+  text = text.replace(/!\[([^\]]*)\]\([^)]*\)/gs, "");
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/gs, "$1 ($2)");
+
   const lines = text.split("\n");
   const result = [];
   let i = 0;

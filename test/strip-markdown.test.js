@@ -194,6 +194,23 @@ describe("stripMarkdown", () => {
     assert.equal(stripMarkdown("before\n* * *\nafter"), "before\nafter");
   });
 
+  it("removes images that are wrapped across multiple lines", () => {
+    const input = "before\n![Latency graph from\n  staging](https://grafana.internal/render/d/pool-health)\nafter";
+    const result = stripMarkdown(input);
+    assert.ok(!result.includes("!["), "image syntax should be stripped");
+    assert.ok(!result.includes("grafana.internal"), "image URL should be stripped");
+    assert.ok(result.includes("before"));
+    assert.ok(result.includes("after"));
+  });
+
+  it("converts links that are wrapped across multiple lines", () => {
+    const input = "See the [connection pool\n  RFC](https://docs.internal/rfcs/conn-pool-v2) for details";
+    const result = stripMarkdown(input);
+    assert.ok(!result.includes("[connection"), "link syntax should be stripped");
+    assert.ok(result.includes("connection pool"));
+    assert.ok(result.includes("https://docs.internal/rfcs/conn-pool-v2"));
+  });
+
   it("passes plain text through unchanged", () => {
     const input = "Just a normal line of text.";
     assert.equal(stripMarkdown(input), input);
